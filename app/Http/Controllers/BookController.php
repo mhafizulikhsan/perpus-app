@@ -8,14 +8,26 @@ use Illuminate\Http\Request;
 class BookController extends Controller
 {
     // Menampilkan daftar buku
-    public function index()
-    {
-        $books = Book::latest()->paginate(10);
+    
+public function index(Request $request)
+{
+    // Mengambil data buku berdasarkan kata kunci pencarian
+    $books = Book::when($request->search, function ($query, $search) {
+        // Mencari berdasarkan judul atau nama penulis
+        $query->where('judul', 'like', "%{$search}%")
+              ->orWhere('penulis', 'like', "%{$search}%");
+    })
+    ->latest()
+    ->paginate(10)
+    ->withQueryString();
 
-        return inertia('Books/Index', [
-            'books' => $books,
-        ]);
-    }
+    // Mengirim data buku dan kata kunci pencarian ke halaman Vue
+    return inertia('Books/Index', [
+        'books' => $books,
+        'search' => $request->search,
+    ]);
+}
+
 
     // Menampilkan formulir tambah buku
     public function create()
@@ -58,45 +70,72 @@ class BookController extends Controller
     }
 
     // Menampilkan formulir edit buku
-    public function edit(Book $book)
-    {
-        return inertia('Books/Edit', [
-            'book' => $book,
-        ]);
-    }
+    
+public function edit(Book $book)
+{
+    // Mengambil data buku yang akan diedit
+    // melalui Route Model Binding
 
-    // Memperbarui data buku
-    public function update(Request $request, Book $book)
-    {
-        $validated = $request->validate([
-            'kode_buku' => 'required|string|max:255|unique:books,kode_buku,' . $book->id,
-            'judul' => 'required|string|max:255',
-            'pengarang' => 'required|string|max:255',
-            'penerbit' => 'nullable|string|max:255',
-            'tahun' => 'required|digits:4',
-            'stok' => 'required|integer|min:0',
-        ]);
+    // Mengirim data buku ke halaman Vue Books/Edit
+    // agar formulir menampilkan nilai lama
+    return inertia('Books/Edit', [
+        'book' => $book,
+    ]);
+}
 
-        // Menyesuaikan nama input dengan kolom database
-        $validated['penulis'] = $validated['pengarang'];
-        $validated['tahun_terbit'] = $validated['tahun'];
+public function update(Request $request, Book $book)
+{
+    // Validasi data yang dikirim dari formulir
+    $validated = $request->validate([
+        'kode_buku' => 'required|unique:books,kode_buku,' . $book->id,
+        'judul' => 'required|max:255',
+        'pengarang' => 'required|max:255',
+        'penerbit' => 'nullable|max:255',
+        'tahun' => 'nullable|digits:4',
+        'stok' => 'required|integer|min:0',
+    ]);
 
-        unset($validated['pengarang'], $validated['tahun']);
+    // Memperbarui data buku dengan data baru
+    $book->update($validated);
 
-        $book->update($validated);
+    // Kembali ke halaman daftar buku
+    // dengan pesan bahwa data berhasil diperbarui
+    return redirect()
+        ->route('books.index')
+        ->with('success', 'Buku berhasil diperbarui');
+}
 
-        return redirect()
-            ->route('books.index')
-            ->with('success', 'Buku berhasil diperbarui');
-    }
 
     // Menghapus buku
-    public function destroy(Book $book)
-    {
-        $book->delete();
+   
+public function destroy(Book $book)
+{
+    // Menghapus data buku dari tabel books
+    $book->delete();
 
-        return redirect()
-            ->route('books.index')
-            ->with('success', 'Buku berhasil dihapus');
-    }
+    // Kembali ke halaman daftar buku
+    // dengan pesan bahwa buku berhasil dihapus
+    return redirect()
+        ->route('books.index')
+        ->with('success', 'Buku berhasil dihapus');
+}
+
+public function share(Request $request): array
+{
+    return [
+        ...parent::share($request),
+
+        // Membagikan informasi pengguna yang sedang login
+        'auth' => [
+            'user' => $request->user(),
+        ],
+
+        // Membagikan pesan flash ke seluruh halaman Vue
+        'flash' => [
+            // Membaca pesan sukses dari session
+            'success' => session('success'),
+        ],
+    ];
+}
+
 }
